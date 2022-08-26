@@ -5,6 +5,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"hezzl/protogrpc"
 	"log"
+	"time"
 )
 
 type GRPCServer struct{}
@@ -38,9 +39,9 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 		return &protogrpc.AddResponse{AddUserResponse: "User already exists: " + req.GetUser()}, nil
 	} else { //если пользователя в базе нет
 		Users[req.User] = "" //записали пользователя в базу
-		log.Printf("User %s added", req.User)
+		log.Printf("User %s added to db", req.User)
 
-		if rdb.Exists(ctx, "listofusers").Val() == 1 { //если в кэш есть список пользователей, то чистим, чтобы обновить
+		if rdb.Exists(ctx, "listofusers").Val() > 0 { //если в кэш есть список пользователей, то чистим, чтобы обновить
 			log.Print("There is list of users in cache!")
 			result, err := rdb.Del(ctx, "listofusers").Result()
 			if err != nil {
@@ -48,6 +49,8 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 			} else if result == 1 {
 				log.Print("list of users in cache cleared!")
 			}
+		} else {
+			log.Print("Cache is empty!")
 		}
 
 		keys := []string{}
@@ -56,6 +59,7 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 		}
 
 		rdb.LPush(ctx, "listofusers", keys) //полностью обновляем весь кэш
+		rdb.Expire(ctx, "listofusers", 60*time.Second)
 		log.Printf("after adding a user into db, cash has been refreshed! Added in to cash %s", keys)
 
 		listofusers := rdb.LRange(ctx, "listofusers", 0, -1).Val()
@@ -68,23 +72,51 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 
 func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*protogrpc.DelResponse, error) {
 	_, ok := Users[req.User]
-
-	if ok {
+	if ok { //если пользователь существует в базе, удалем его из базы
 		delete(Users, req.User)
+		log.Printf("User %s deleted from db", req.User)
+
+		if rdb.Exists(ctx, "listofusers").Val() > 0 { //если в кэш есть список пользователей, то чистим, чтобы обновить
+			log.Print("There is list of users in cache!")
+			result, err := rdb.Del(ctx, "listofusers").Result()
+			if err != nil {
+				log.Print(err)
+			} else if result == 1 {
+				log.Print("list of users in cache cleared!")
+			}
+		} else {
+			log.Print("Cache is empty!")
+		}
+
+		keys := []string{}
+		for key, _ := range Users {
+			keys = append(keys, key)
+		}
+
+		rdb.LPush(ctx, "listofusers", keys) //полностью обновляем весь кэш
+		rdb.Expire(ctx, "listofusers", 60*time.Second)
+		log.Printf("after deleting a user from db, cash has been refreshed! Added in to cash %s", keys)
+
+		listofusers := rdb.LRange(ctx, "listofusers", 0, -1).Val()
+		log.Printf("Cash is %s", listofusers)
+
 		return &protogrpc.DelResponse{DelUserResponse: "User deleted succesfully: " + req.GetUser()}, nil
-	} else {
+	} else { //если пользователя в базе не существовало
 		return &protogrpc.DelResponse{DelUserResponse: "User doesn't exists: " + req.GetUser()}, nil
 	}
-
 }
 
 func (s *GRPCServer) ListUsers(ctx context.Context, req *protogrpc.ListUsersRequest) (*protogrpc.ListUsersResponse, error) {
-	keys := []string{}
-	for key, _ := range Users {
-		keys = append(keys, key)
-	}
+	if rdb.Exists(ctx, "listofusers").Val() > 0 {
+		return &protogrpc.ListUsersResponse{Listusers: rdb.LRange(ctx, "listofusers", 0, -1).Val()}, nil
+	} else {
+		keys := []string{}
+		for key, _ := range Users {
+			keys = append(keys, key)
+		}
 
-	return &protogrpc.ListUsersResponse{Listusers: keys}, nil
+		return &protogrpc.ListUsersResponse{Listusers: keys}, nil
+	}
 }
 
 /*func (s *GRPCServer) mustEmbedUnimplementedUsersAdminServer() {

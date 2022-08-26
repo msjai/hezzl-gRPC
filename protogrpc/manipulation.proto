@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package protogrpc;
+
+option go_package = "./protogrpc";
+
+service UsersAdmin {
+  rpc AddUser(AddRequest) returns (AddResponse);
+  rpc DelUser (DelRequest) returns (DelResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
+
+message AddRequest {
+  string user = 1;
+}
+
+message AddResponse {
+  string AddUserResponse = 1;
+}
+
+message DelRequest {
+  string user = 1;
+}
+
+message DelResponse {
+  string DelUserResponse = 1;
+}
+
+message ListUsersRequest {
+}
+
+message ListUsersResponse {
+  /*repeated string listusers = 1;*/
+  map<string, string> listusers = 1;
+}
+
+

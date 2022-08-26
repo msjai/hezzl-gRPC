@@ -30,8 +30,7 @@ message ListUsersRequest {
 }
 
 message ListUsersResponse {
-  /*repeated string listusers = 1;*/
-  map<string, string> listusers = 1;
+  repeated string listusers = 1;
 }
 
 

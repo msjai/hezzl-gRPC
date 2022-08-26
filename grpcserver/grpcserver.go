@@ -52,18 +52,18 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 		} else {
 			log.Print("Cache is empty!")
 		}
-
-		keys := []string{}
+		keys := makeKeys()
+		/*keys := []string{}
 		for key, _ := range Users {
 			keys = append(keys, key)
-		}
+		}*/
 
-		rdb.LPush(ctx, "listofusers", keys) //полностью обновляем весь кэш
+		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
-		log.Printf("after adding a user into db, cash has been refreshed! Added in to cash %s", keys)
+		log.Printf("after adding a user into db, cash has been refreshed! Added in to cash %s", *keys)
 
-		listofusers := rdb.LRange(ctx, "listofusers", 0, -1).Val()
-		log.Printf("Cash is %s", listofusers)
+		listOfUsers := getListOfUsersFromCache(ctx)
+		log.Printf("Cash is %s", *listOfUsers)
 
 		return &protogrpc.AddResponse{AddUserResponse: "User added: " + req.GetUser()}, nil
 	}
@@ -87,18 +87,18 @@ func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*p
 		} else {
 			log.Print("Cache is empty!")
 		}
-
-		keys := []string{}
+		keys := makeKeys()
+		/*keys := []string{}
 		for key, _ := range Users {
 			keys = append(keys, key)
-		}
+		}*/
 
-		rdb.LPush(ctx, "listofusers", keys) //полностью обновляем весь кэш
+		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
-		log.Printf("after deleting a user from db, cash has been refreshed! Added in to cash %s", keys)
+		log.Printf("after deleting a user from db, cash has been refreshed! Added in to cash %s", *keys)
 
-		listofusers := rdb.LRange(ctx, "listofusers", 0, -1).Val()
-		log.Printf("Cash is %s", listofusers)
+		listOfUsers := getListOfUsersFromCache(ctx)
+		log.Printf("Cash is %s", *listOfUsers)
 
 		return &protogrpc.DelResponse{DelUserResponse: "User deleted succesfully: " + req.GetUser()}, nil
 	} else { //если пользователя в базе не существовало
@@ -108,15 +108,38 @@ func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*p
 
 func (s *GRPCServer) ListUsers(ctx context.Context, req *protogrpc.ListUsersRequest) (*protogrpc.ListUsersResponse, error) {
 	if rdb.Exists(ctx, "listofusers").Val() > 0 {
-		return &protogrpc.ListUsersResponse{Listusers: rdb.LRange(ctx, "listofusers", 0, -1).Val()}, nil
+		listOfUsers := getListOfUsersFromCache(ctx)
+		log.Printf("List of users got from Cache!!! They are: %s", *listOfUsers)
+
+		return &protogrpc.ListUsersResponse{Listusers: *listOfUsers}, nil
 	} else {
-		keys := []string{}
+		keys := makeKeys()
+		/*keys := []string{}
 		for key, _ := range Users {
 			keys = append(keys, key)
-		}
+		}*/
 
-		return &protogrpc.ListUsersResponse{Listusers: keys}, nil
+		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
+		rdb.Expire(ctx, "listofusers", 60*time.Second)
+		listOfUsers := getListOfUsersFromCache(ctx)
+		log.Printf("List of users got from db to refresh cache! Cache refreshed. List of users got from cache! They are: %s", *listOfUsers)
+
+		return &protogrpc.ListUsersResponse{Listusers: *listOfUsers}, nil
 	}
+}
+
+func getListOfUsersFromCache(ctx context.Context) *[]string {
+	val := rdb.LRange(ctx, "listofusers", 0, -1).Val()
+	return &val
+}
+
+func makeKeys() *[]string {
+	keys := []string{}
+	for key, _ := range Users {
+		keys = append(keys, key)
+	}
+
+	return &keys
 }
 
 /*func (s *GRPCServer) mustEmbedUnimplementedUsersAdminServer() {

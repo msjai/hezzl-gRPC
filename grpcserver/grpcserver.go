@@ -12,8 +12,10 @@ type GRPCServer struct{}
 
 type UsersType map[string]string //Мок виде map для тестирования
 
-var Users = make(UsersType, 10) //Мок виде map для тестирования
-var rdb *redis.Client
+var (
+	Users = make(UsersType, 10) //Мок виде map для тестирования
+	rdb   *redis.Client
+)
 
 func InitRedisConnection() {
 	ctx := context.Background()
@@ -53,10 +55,6 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 			log.Print("Cache is empty!")
 		}
 		keys := makeKeys()
-		/*keys := []string{}
-		for key, _ := range Users {
-			keys = append(keys, key)
-		}*/
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
@@ -67,7 +65,6 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 
 		return &protogrpc.AddResponse{AddUserResponse: "User added: " + req.GetUser()}, nil
 	}
-
 }
 
 func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*protogrpc.DelResponse, error) {
@@ -88,10 +85,6 @@ func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*p
 			log.Print("Cache is empty!")
 		}
 		keys := makeKeys()
-		/*keys := []string{}
-		for key, _ := range Users {
-			keys = append(keys, key)
-		}*/
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
@@ -114,10 +107,6 @@ func (s *GRPCServer) ListUsers(ctx context.Context, req *protogrpc.ListUsersRequ
 		return &protogrpc.ListUsersResponse{Listusers: *listOfUsers}, nil
 	} else {
 		keys := makeKeys()
-		/*keys := []string{}
-		for key, _ := range Users {
-			keys = append(keys, key)
-		}*/
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)

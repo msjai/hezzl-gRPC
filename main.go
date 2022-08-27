@@ -15,8 +15,6 @@ func main() {
 
 	protogrpc.RegisterUsersAdminServer(s, srv)
 
-	grpcserver.InitRedisConnection()
-
 	l, err := net.Listen("tcp", ":8080")
 	if err != nil {
 		log.Fatal(err)

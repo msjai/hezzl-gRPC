@@ -2,7 +2,11 @@ package grpcserver
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"github.com/go-redis/redis/v8"
+	_ "github.com/lib/pq"
 	"hezzl/protogrpc"
 	"log"
 	"time"
@@ -13,8 +17,34 @@ type GRPCServer struct{}
 type UsersType map[string]string //Мок виде map для тестирования
 
 var (
-	Users = make(UsersType, 10) //Мок виде map для тестирования
+	Users       = make(UsersType, 10) //Мок виде map для тестирования
+	ErrNoRecord = errors.New("record not found")
 )
+
+const (
+	host     = "158.160.10.60"
+	port     = 5432
+	user     = "postgres"
+	password = "postgres"
+	dbname   = "hezzlusers"
+)
+
+func InitPostgresConnection() *sql.DB {
+	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlconn)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Print("postgres connected!")
+
+	return db
+}
 
 func InitRedisConnection(ctx context.Context) *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
@@ -33,15 +63,51 @@ func InitRedisConnection(ctx context.Context) *redis.Client {
 	return rdb
 }
 
+func UserExistsPostgres(db *sql.DB, userName string) bool {
+	var userFromDB string
+
+	stmt := `SELECT "user_name" FROM "users" WHERE user_name = $1`
+	row := db.QueryRow(stmt, userName)
+
+	err := row.Scan(&userFromDB)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("there is no such user %s in data base", userName)
+			return false
+		} else {
+			log.Print(err)
+			return false
+		}
+	}
+
+	return true
+}
+
+func AddUserPostgres(db *sql.DB, userName string) error {
+	stmt := `INSERT INTO users (user_name) VALUES($1)`
+
+	_, err := db.Exec(stmt, userName)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*protogrpc.AddResponse, error) {
 	rdb := InitRedisConnection(ctx)
 	defer rdb.Close()
 
-	_, ok := Users[req.User]
+	db := InitPostgresConnection()
+	defer db.Close()
+
+	ok := UserExistsPostgres(db, req.User)
+	/*_, ok := Users[req.User]*/
 	if ok { //если пользователь существует в базе
 		return &protogrpc.AddResponse{AddUserResponse: "User already exists: " + req.GetUser()}, nil
 	} else { //если пользователя в базе нет
-		Users[req.User] = "" //записали пользователя в базу
+		/*Users[req.User] = "" //записали пользователя в базу*/
+		AddUserPostgres(db, req.User) //записали пользователя в базу
 		log.Printf("User %s added to db", req.User)
 
 		if rdb.Exists(ctx, "listofusers").Val() > 0 { //если в кэш есть список пользователей, то чистим, чтобы обновить
@@ -55,7 +121,7 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 		} else {
 			log.Print("Cache is empty!")
 		}
-		keys := makeKeys()
+		keys := makeKeys(db)
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
@@ -71,6 +137,9 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*protogrpc.DelResponse, error) {
 	rdb := InitRedisConnection(ctx)
 	defer rdb.Close()
+
+	db := InitPostgresConnection()
+	defer db.Close()
 
 	_, ok := Users[req.User]
 	if ok { //если пользователь существует в базе, удалем его из базы
@@ -88,7 +157,7 @@ func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*p
 		} else {
 			log.Print("Cache is empty!")
 		}
-		keys := makeKeys()
+		keys := makeKeys(db)
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
@@ -107,13 +176,16 @@ func (s *GRPCServer) ListUsers(ctx context.Context, req *protogrpc.ListUsersRequ
 	rdb := InitRedisConnection(ctx)
 	defer rdb.Close()
 
+	db := InitPostgresConnection()
+	defer db.Close()
+
 	if rdb.Exists(ctx, "listofusers").Val() > 0 {
 		listOfUsers := getListOfUsersFromCache(ctx, rdb)
 		log.Printf("List of users got from Cache!!! They are: %s", *listOfUsers)
 
 		return &protogrpc.ListUsersResponse{Listusers: *listOfUsers}, nil
 	} else {
-		keys := makeKeys()
+		keys := makeKeys(db)
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
@@ -129,13 +201,36 @@ func getListOfUsersFromCache(ctx context.Context, rdb *redis.Client) *[]string {
 	return &val
 }
 
-func makeKeys() *[]string {
-	keys := []string{}
-	for key, _ := range Users {
-		keys = append(keys, key)
+func makeKeys(db *sql.DB) *[]string {
+	var (
+		userFromDB string
+		Users      []string
+	)
+
+	stmt := `SELECT user_name FROM users`
+
+	rows, err := db.Query(stmt)
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		err := rows.Scan(&userFromDB)
+		if err != nil {
+			log.Print(err)
+			return nil
+		}
+		Users = append(Users, userFromDB)
 	}
 
-	return &keys
+	if err = rows.Err(); err != nil {
+		log.Print(err)
+		return nil
+	}
+
+	return &Users
 }
 
 /*func (s *GRPCServer) mustEmbedUnimplementedUsersAdminServer() {

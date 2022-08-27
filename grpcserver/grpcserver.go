@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	_ "github.com/lib/pq"
+	"hezzl/broker"
 	"hezzl/protogrpc"
 	"log"
 	"time"
@@ -94,6 +95,17 @@ func AddUserPostgres(db *sql.DB, userName string) error {
 	return nil
 }
 
+func DelUserPostgres(db *sql.DB, userName string) error {
+	stmt := `DELETE FROM users WHERE user_name=$1`
+
+	_, err := db.Exec(stmt, userName)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*protogrpc.AddResponse, error) {
 	rdb := InitRedisConnection(ctx)
 	defer rdb.Close()
@@ -107,14 +119,19 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 		return &protogrpc.AddResponse{AddUserResponse: "User already exists: " + req.GetUser()}, nil
 	} else { //если пользователя в базе нет
 		/*Users[req.User] = "" //записали пользователя в базу*/
-		AddUserPostgres(db, req.User) //записали пользователя в базу
+		err := AddUserPostgres(db, req.User) //записали пользователя в базу
+		if err != nil {
+			return nil, err
+		}
 		log.Printf("User %s added to db", req.User)
+		broker.Produce(ctx, fmt.Sprintf("User %s added to db", req.User))
 
 		if rdb.Exists(ctx, "listofusers").Val() > 0 { //если в кэш есть список пользователей, то чистим, чтобы обновить
 			log.Print("There is list of users in cache!")
 			result, err := rdb.Del(ctx, "listofusers").Result()
 			if err != nil {
 				log.Print(err)
+				return nil, err
 			} else if result == 1 {
 				log.Print("list of users in cache cleared!")
 			}
@@ -141,9 +158,13 @@ func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*p
 	db := InitPostgresConnection()
 	defer db.Close()
 
-	_, ok := Users[req.User]
+	ok := UserExistsPostgres(db, req.User)
+	/*_, ok := Users[req.User]*/
 	if ok { //если пользователь существует в базе, удалем его из базы
-		delete(Users, req.User)
+		err := DelUserPostgres(db, req.User) //удаляем пользователя из базы
+		if err != nil {
+			return nil, err
+		}
 		log.Printf("User %s deleted from db", req.User)
 
 		if rdb.Exists(ctx, "listofusers").Val() > 0 { //если в кэш есть список пользователей, то чистим, чтобы обновить
@@ -151,6 +172,7 @@ func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*p
 			result, err := rdb.Del(ctx, "listofusers").Result()
 			if err != nil {
 				log.Print(err)
+				return nil, err
 			} else if result == 1 {
 				log.Print("list of users in cache cleared!")
 			}
@@ -208,7 +230,6 @@ func makeKeys(db *sql.DB) *[]string {
 	)
 
 	stmt := `SELECT user_name FROM users`
-
 	rows, err := db.Query(stmt)
 	if err != nil {
 		log.Print(err)

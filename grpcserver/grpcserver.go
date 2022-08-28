@@ -142,7 +142,7 @@ func (s *GRPCServer) AddUser(ctx context.Context, req *protogrpc.AddRequest) (*p
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
-		log.Printf("after adding a user into db, cash has been refreshed! Added in to cash %s", *keys)
+		log.Printf("after adding a user %s into db, cash has been refreshed! Added in to cash %s", req.User, *keys)
 
 		listOfUsers := getListOfUsersFromCache(ctx, rdb)
 		log.Printf("Cash is %s", *listOfUsers)
@@ -183,7 +183,7 @@ func (s *GRPCServer) DelUser(ctx context.Context, req *protogrpc.DelRequest) (*p
 
 		rdb.LPush(ctx, "listofusers", *keys) //полностью обновляем весь кэш
 		rdb.Expire(ctx, "listofusers", 60*time.Second)
-		log.Printf("after deleting a user from db, cash has been refreshed! Added in to cash %s", *keys)
+		log.Printf("after deleting a user %s from db, cash has been refreshed! Added in to cash %s", req.User, *keys)
 
 		listOfUsers := getListOfUsersFromCache(ctx, rdb)
 		log.Printf("Cash is %s", *listOfUsers)
@@ -200,6 +200,7 @@ func (s *GRPCServer) ListUsers(ctx context.Context, req *protogrpc.ListUsersRequ
 
 	db := InitPostgresConnection()
 	defer db.Close()
+	broker.Consume()
 
 	if rdb.Exists(ctx, "listofusers").Val() > 0 {
 		listOfUsers := getListOfUsersFromCache(ctx, rdb)

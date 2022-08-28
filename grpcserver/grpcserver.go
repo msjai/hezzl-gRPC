@@ -200,7 +200,6 @@ func (s *GRPCServer) ListUsers(ctx context.Context, req *protogrpc.ListUsersRequ
 
 	db := InitPostgresConnection()
 	defer db.Close()
-	broker.Consume()
 
 	if rdb.Exists(ctx, "listofusers").Val() > 0 {
 		listOfUsers := getListOfUsersFromCache(ctx, rdb)

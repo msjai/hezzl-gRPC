@@ -56,7 +56,7 @@ func InitRedisConnection(ctx context.Context) *redis.Client {
 
 	_, err := rdb.Ping(ctx).Result()
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
 	}
 
 	log.Print("redis connected!")

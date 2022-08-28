@@ -24,7 +24,7 @@ func Produce(ctx context.Context, logMessage string) {
 
 	conn, err := kafka.DialLeader(ctx, "tcp", broker1Address, topic, partition)
 	if err != nil {
-		log.Fatal("failed to dial leader:", err)
+		log.Print("failed to dial leader:", err)
 	}
 
 	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
@@ -43,10 +43,10 @@ func Produce(ctx context.Context, logMessage string) {
 		kafka.Message{Value: LogMsgJson},
 	)
 	if err != nil {
-		log.Fatal("failed to write messages:", err)
+		log.Print("failed to write messages:", err)
 	}
 
 	if err := conn.Close(); err != nil {
-		log.Fatal("failed to close writer:", err)
+		log.Print("failed to close writer:", err)
 	}
 }

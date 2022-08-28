@@ -32,6 +32,11 @@
   - можно подключиться из браузера: http://158.160.10.60:8123/play
   - tables: logs_queue, logs, logs_consumer
 
+методы gRPC:
+- AddUser
+- DelUser
+- ListUsers
+
 Для тестирования gRPC можно использовать evans:
 https://github.com/ktr0731/evans
 

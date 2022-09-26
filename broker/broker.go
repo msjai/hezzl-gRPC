@@ -5,13 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/segmentio/kafka-go"
+	"hezzl/auth"
 	"log"
 	"time"
-)
-
-const (
-	topic          = "HezzlLogs"
-	broker1Address = "158.160.10.60:9092"
 )
 
 type LogMessageType struct {
@@ -20,6 +16,16 @@ type LogMessageType struct {
 }
 
 func Produce(ctx context.Context, logMessage string) {
+	topic, err := auth.GetToken("#KafkaTopic")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	broker1Address, err := auth.GetToken("#KafkaBroker1Address")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	partition := 0
 
 	conn, err := kafka.DialLeader(ctx, "tcp", broker1Address, topic, partition)

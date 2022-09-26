@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/lib/pq v1.10.6
+	github.com/pkg/errors v0.9.1
 	github.com/segmentio/kafka-go v0.4.34
 	google.golang.org/grpc v1.49.0
 	google.golang.org/protobuf v1.28.1

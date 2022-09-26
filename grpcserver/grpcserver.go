@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	_ "github.com/lib/pq"
+	"hezzl/auth"
 	"hezzl/broker"
 	"hezzl/protogrpc"
 	"log"
+	"strconv"
 	"time"
 )
 
@@ -22,15 +24,32 @@ var (
 	ErrNoRecord = errors.New("record not found")
 )
 
-const (
-	host     = "158.160.10.60"
-	port     = 5432
-	user     = "postgres"
-	password = "postgres"
-	dbname   = "hezzlusers"
-)
-
 func InitPostgresConnection() *sql.DB {
+	host, err := auth.GetToken("#PostgreSQLHost")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	port, err := auth.GetToken("#PostgreSQLPort")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	user, err := auth.GetToken("#PostgreSQLUser")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	password, err := auth.GetToken("#PostgreSQLPass")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dbname, err := auth.GetToken("#PostgreSQLDBName")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 	db, err := sql.Open("postgres", psqlconn)
 	if err != nil {
@@ -48,13 +67,32 @@ func InitPostgresConnection() *sql.DB {
 }
 
 func InitRedisConnection(ctx context.Context) *redis.Client {
+	redisAddr, err := auth.GetToken("#RedisAddr")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	redisPass, err := auth.GetToken("#RedisPass")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	redisDB, err := auth.GetToken("#RedisDB")
+	if err != nil {
+		log.Fatal(err)
+	}
+	redisDBInt, err := strconv.Atoi(redisDB)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "158.160.10.60:6379",
-		Password: "wiNNer4000", // no password set
-		DB:       0,            // use default DB
+		Addr:     redisAddr,
+		Password: redisPass,
+		DB:       redisDBInt, // use default DB
 	})
 
-	_, err := rdb.Ping(ctx).Result()
+	_, err = rdb.Ping(ctx).Result()
 	if err != nil {
 		log.Print(err)
 	}
